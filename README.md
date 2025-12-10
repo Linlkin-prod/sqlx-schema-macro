@@ -1,17 +1,19 @@
 # sqlx-schema-macro
 
-A Rust procedural macro for defining SQL database schemas with a clean, intuitive DSL syntax.
+A Rust procedural macro for defining SQL database schemas and populating them with data using a clean, intuitive DSL syntax.
 
 ## Overview
 
-`sqlx-schema-macro` simplifies database schema definition by allowing you to write SQL table definitions using a custom Rust-based DSL. The macro automatically generates the corresponding SQL `CREATE TABLE` statements.
+`sqlx-schema-macro` simplifies database schema definition and data insertion by allowing you to write SQL table definitions and data rows using a custom Rust-based DSL. The macros automatically generate the corresponding SQL `CREATE TABLE` and `INSERT` statements at compile time.
 
 ## Features
 
 - **Intuitive Schema Syntax**: Define tables and fields using a readable DSL
+- **Multiple Macros**: `create_tables!` for schema definition and `add_rows!` for data insertion
 - **Field Modifiers**: Support for `PRIMARY`, `FOREIGN`, and `NULLABLE` field attributes
 - **Explicit Foreign Keys**: Define foreign key relationships with explicit table references
 - **Type Mapping**: Automatic conversion from Rust types to SQL types
+- **Data Row Definition**: Define sample or initial data inline with the schema
 - **Code Generation**: Generates valid SQL at compile time
 
 ## Installation
@@ -25,13 +27,15 @@ sqlx-schema-macro = "0.1.0"
 
 ## Usage
 
-### Basic Example
+### Creating Tables
+
+Use the `create_tables!` macro to define your schema:
 
 ```rust
-use sqlx_schema_macro::define_schema;
+use mac_proc_sqlx::create_tables;
 
 fn main() {
-    let sql = define_schema! {
+    let sql = create_tables! {
         Product {
             PRIMARY id: i32,
             name: str,
@@ -55,9 +59,87 @@ fn main() {
 }
 ```
 
-### Output
+### Inserting Data
 
-The macro generates the following SQL:
+Use the `add_rows!` macro to generate INSERT statements:
+
+```rust
+use mac_proc_sqlx::add_rows;
+
+fn main() {
+    let sql = add_rows! {
+        Product {
+            (1, "Laptop", 999.99, NULL),
+            (2, "Smartphone", 499.49, "Electronics")
+        },
+
+        Client {
+            (1, "alice", "alice@example.com"),
+            (2, "bob", "bob@example.com")
+        },
+
+        Cart {
+            (1, 1),
+            (2, 2)
+        }
+    };
+    
+    println!("{}", sql);
+}
+```
+
+### Complete Example
+
+```rust
+use mac_proc_sqlx::{create_tables, add_rows};
+
+fn main() {
+    let mut sql = create_tables! {
+        Product {
+            PRIMARY id: i32,
+            name: str,
+            price: f32,
+            NULLABLE tag: str
+        },
+
+        Client {
+            PRIMARY id: i32,
+            username: str,
+            email: str
+        },
+
+        Cart {
+            FOREIGN (Product) product_id: i32,
+            FOREIGN (Client) client_id: i32
+        }
+    };
+    
+    println!("Schema:\n{}", sql);
+
+    sql = add_rows! {
+        Product {
+            (1, "Laptop", 999.99, NULL),
+            (2, "Smartphone", 499.49, "Electronics")
+        },
+
+        Client {
+            (1, "alice", "alice@example.com"),
+            (2, "bob", "bob@example.com")
+        },
+
+        Cart {
+            (1, 1),
+            (2, 2)
+        }
+    };
+
+    println!("\nData:\n{}", sql);
+}
+```
+
+### Generated SQL Output
+
+#### From `create_tables!`
 
 ```sql
 CREATE TABLE Product (
@@ -81,7 +163,25 @@ CREATE TABLE Cart (
 );
 ```
 
+#### From `add_rows!`
+
+```sql
+INSERT INTO Product (id, name, price, tag) VALUES (1, 'Laptop', 999.99, NULL);
+INSERT INTO Product (id, name, price, tag) VALUES (2, 'Smartphone', 499.49, 'Electronics');
+
+INSERT INTO Client (id, username, email) VALUES (1, 'alice', 'alice@example.com');
+INSERT INTO Client (id, username, email) VALUES (2, 'bob', 'bob@example.com');
+
+INSERT INTO Cart (product_id, client_id) VALUES (1, 1);
+INSERT INTO Cart (product_id, client_id) VALUES (2, 2);
+```
+
 ## Schema Definition Syntax
+
+### Macros
+
+- **`create_tables!`**: Generates SQL `CREATE TABLE` statements
+- **`add_rows!`**: Generates SQL `INSERT` statements
 
 ### Table Declaration
 
@@ -178,11 +278,12 @@ fn main() {
 
 ## How It Works
 
-The macro uses `syn` for parsing the Rust token stream and generates SQL strings at compile time. This provides:
+The macros use `syn` and `quote` for parsing the Rust token stream and generating SQL strings at compile time. This provides:
 
 - **Type Safety**: Syntax errors are caught at compile time
 - **Performance**: SQL generation happens during compilation
 - **Zero Runtime Overhead**: No runtime parsing or evaluation
+- **Compile-Time Validation**: Invalid schemas are rejected before runtime
 
 ## Contributing
 

@@ -31,6 +31,16 @@ enum FieldModifier {
     Nullable, // Nullable field
 }
 
+struct SchemaInsert {
+    rows: Vec<RowInsert>, // List of row insertions
+}
+
+struct RowInsert {
+    table_name: Ident, // Table name
+    values: Vec<syn::ExprTuple>, // List of value tuples to insert
+}
+
+
 impl Parse for Schema {
     fn parse(input: ParseStream) -> Result<Self> {
         let mut tables = Vec::new();
@@ -118,13 +128,54 @@ impl Parse for Field {
     }
 }
 
+impl Parse for SchemaInsert {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let mut rows = Vec::new();
+        
+        while !input.is_empty() {
+            rows.push(input.parse::<RowInsert>()?);
+            
+            // Optional trailing comma after each table
+            if input.peek(Token![,]) {
+                input.parse::<Token![,]>()?;
+            }
+        }
+        
+        Ok(SchemaInsert { rows })
+    }
+}
+
+impl Parse for RowInsert {
+    fn parse(input: ParseStream) -> Result<Self> {
+        // Parse table name
+        let table_name = input.parse::<Ident>()?;
+        
+        // Parse the brace-enclosed value tuples
+        let content;
+        syn::braced!(content in input);
+        
+        let mut values = Vec::new();
+        
+        while !content.is_empty() {
+            values.push(content.parse::<syn::ExprTuple>()?);
+            
+            // Expect comma after each tuple
+            if !content.is_empty() {
+                content.parse::<Token![,]>()?;
+            }
+        }
+        
+        Ok(RowInsert { table_name, values })
+    }
+}
+
 #[proc_macro]
-pub fn define_schema(input: TokenStream) -> TokenStream {
+pub fn create_tables(input: TokenStream) -> TokenStream {
     // Parse the input tokens directly as our Schema type
     let schema = parse_macro_input!(input as Schema);
     
     // Generate SQL from the parsed schema
-    let sql = generate_sql(&schema.tables);
+    let sql = generate_sql_create(&schema.tables);
     
     // Generate the output code
     let expanded = quote! {
@@ -137,7 +188,25 @@ pub fn define_schema(input: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
-fn generate_sql(tables: &[Table]) -> String {
+#[proc_macro]
+pub fn add_rows(input: TokenStream) -> TokenStream {
+
+    let schema_insert = parse_macro_input!(input as SchemaInsert);
+
+    let sql = generate_sql_insert(&schema_insert.rows);
+
+    // Placeholder for add_rows! macro implementation
+    let expanded = quote! {
+        {
+            const SQL_INSERT: &str = #sql;
+            SQL_INSERT
+        }
+    };
+    
+    TokenStream::from(expanded)
+}
+
+fn generate_sql_create(tables: &[Table]) -> String {
     let mut sql = String::new();
     
     // Generate SQL for each table
@@ -206,5 +275,30 @@ fn generate_sql(tables: &[Table]) -> String {
         sql.push_str("\n);\n\n");
     }
     
+    sql
+}
+
+fn generate_sql_insert (rows: &[RowInsert]) -> String {
+    let mut sql = String::new();
+
+    for row_insert in rows {
+        let table_name = &row_insert.table_name;
+        
+        for values in &row_insert.values {
+            let value_strings: Vec<String> = values.elems.iter().map(|expr| {
+                match expr {
+                    syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Str(s), .. }) => format!("'{}'", s.value()),
+                    syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Int(i), .. }) => i.base10_digits().to_string(),
+                    syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Float(f), .. }) => f.base10_digits().to_string(),
+                    syn::Expr::Path(p) if p.path.is_ident("NULL") => "NULL".to_string(),
+                    _ => "NULL".to_string(), // Fallback for unsupported types
+                }
+            }).collect();
+
+            let values_str = value_strings.join(", ");
+            sql.push_str(&format!("INSERT INTO {} VALUES ({});\n", table_name, values_str));
+        }
+    }
+
     sql
 }

@@ -1,8 +1,8 @@
-use mac_proc_sqlx::define_schema;
+use mac_proc_sqlx::{create_tables,add_rows};
 
 /// Example usage of the define_schema! macro
 fn main() {
-    let sql = define_schema! {
+    let mut sql = create_tables! {
         Product {
             PRIMARY id: i32,
             name: str,
@@ -23,5 +23,22 @@ fn main() {
     };
     
     println!("{}", sql);
+
+    sql = add_rows! {
+        Product {
+            (1, "Laptop", 999.99, NULL),
+            (2, "Smartphone", 499.49, "Electronics")
+        },
+
+        Client {
+            (1, "alice", "alice@example.com"),
+            (2, "bob", "bob@example.com")
+        },
+        Cart {
+            (1, 1),
+            (2, 2)
+        }
+    };
+
+    println!("{}", sql);
 }
-                        
